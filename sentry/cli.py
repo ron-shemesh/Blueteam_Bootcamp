@@ -12,6 +12,8 @@ def main():
     ap.add_argument("--target", type=int, default=20, help="known malicious count")
     ap.add_argument("--json", action="store_true", help="emit JSON")
     ap.add_argument("--ai", action="store_true", help="enable AI confirmation")
+    ap.add_argument("--investigate", action="store_true",
+                    help="run on-demand investigation (off the clock)")
     args = ap.parse_args()
 
     t0 = time.perf_counter()
@@ -34,6 +36,23 @@ def main():
         for v in sorted(malicious, key=lambda v: v.confidence, reverse=True):
             print(f"  row {v.row_id:>3} | conf {v.confidence:.2f} | "
                   f"{v.mitre_technique or '-':<11} | {v.reason}")
+
+    if getattr(args, "investigate", False):
+        from sentry.investigate import (build_story, remediation_playbook,
+                                        find_traps, infer_objective)
+        mal_records = [s for s in correlated if s.command.row_id in
+                       {v.row_id for v in malicious}]
+        print("\n" + "=" * 60 + "\nINVESTIGATION\n" + "=" * 60)
+        print(build_story(mal_records))
+        print(f"\nInferred objective: {infer_objective(mal_records)}")
+        print("\nRemediation playbook:")
+        for step in remediation_playbook(mal_records):
+            print(f"  - {step}")
+        traps = find_traps(correlated)
+        if traps:
+            print(f"\nTrap detector: {len(traps)} decoy(s) cleared:")
+            for t in traps:
+                print(f"  - row {t['row_id']}: {t['command']}")
 
 
 if __name__ == "__main__":
