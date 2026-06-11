@@ -4,6 +4,12 @@ import os
 from sentry.models import ScoredRecord
 
 
+def _text(msg):
+    """Extract the assistant's text, skipping thinking blocks (Fable 5 emits both)."""
+    return "".join(b.text for b in msg.content
+                   if getattr(b, "type", None) == "text").strip()
+
+
 def choose_mode(flagged_count: int, target: int) -> str:
     if flagged_count > target:
         return "PRUNE"
@@ -26,10 +32,12 @@ def _payload(records: list[ScoredRecord]) -> list[dict]:
 
 class AnthropicClient:
     """Real client. Returns list[int] of row_ids judged malicious."""
-    def __init__(self, model="claude-fable-5"):
+    def __init__(self, model=None):
         from anthropic import Anthropic
         self.client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-        self.model = model
+        # Sonnet 4.6 by default: capable, fast, and (unlike Fable 5's dual-use
+        # safeguards) it engages with defensive security analysis without refusing.
+        self.model = model or os.environ.get("SENTRY_MODEL", "claude-sonnet-4-6")
 
     def judge(self, payload, mode, target):
         instructions = {
@@ -55,20 +63,20 @@ class AnthropicClient:
               f"\n... (payload of {len(payload)} commands) ...\n"
               f"---------------------------------", file=sys.stderr, flush=True)
         msg = self.client.messages.create(
-            model=self.model, max_tokens=1024,
+            model=self.model, max_tokens=4000,
             messages=[{"role": "user", "content": prompt}],
         )
-        text = msg.content[0].text
+        text = _text(msg)
         start, end = text.find("{"), text.rfind("}") + 1
         return json.loads(text[start:end]).get("malicious_row_ids", [])
 
-    def chat(self, prompt, max_tokens=600):
+    def chat(self, prompt, max_tokens=2000):
         """Free-form completion used by the investigation narrator."""
         msg = self.client.messages.create(
             model=self.model, max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
-        return msg.content[0].text.strip()
+        return _text(msg)
 
 
 def confirm(scored: list[ScoredRecord], target: int, client,

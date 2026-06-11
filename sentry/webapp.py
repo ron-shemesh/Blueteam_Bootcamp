@@ -9,7 +9,7 @@ from sentry.pipeline import run_full
 from sentry.investigate import (name_scenario, remediation_playbook, find_traps,
                                 report_card, infer_objective, order_by_killchain,
                                 _tac, _technique)
-from sentry.narrate import ai_narrative
+from sentry.narrate import ai_investigation
 
 app = Flask(__name__)
 _STATE = {}
@@ -115,6 +115,7 @@ li{margin:4px 0}
       <div class="mal"><div class="n" id="f_mal">0</div><div class="l">flagged malicious</div></div>
       <div class="tm"><div class="n" id="f_tm">0s</div><div class="l">scan time</div></div>
     </div>
+    <div id="ainote" style="margin:-6px 0 14px;font-size:13px"></div>
     <div class="card">
       <h3>Flagged commands</h3>
       <table><thead><tr><th>row</th><th>confidence</th><th>technique</th><th>why flagged</th></tr></thead>
@@ -153,6 +154,17 @@ async function scan(){
   document.getElementById('f_cl').textContent=d.cleared;
   document.getElementById('f_mal').textContent=d.malicious.length;
   document.getElementById('f_tm').textContent=d.elapsed+'s';
+  const note=document.getElementById('ainote');
+  if(d.ai){
+    let msg=`Rules engine flagged ${d.rules_count}. `;
+    if(d.ai_recovered.length) msg+=`AI HUNT recovered ${d.ai_recovered.length} stealthy command(s) the rules missed (rows ${d.ai_recovered.join(', ')}). `;
+    if(d.ai_cleared.length) msg+=`AI cleared ${d.ai_cleared.length} false positive(s). `;
+    if(!d.ai_recovered.length && !d.ai_cleared.length) msg+='AI confirmed the rules\' verdict.';
+    note.textContent='✦ '+msg; note.style.color='var(--green)';
+  } else {
+    note.textContent='⚙ Deterministic only — add your key to apikey.txt to enable the AI pass.';
+    note.style.color='var(--mut)';
+  }
   const rows=d.malicious.slice().sort((a,b)=>b.confidence-a.confidence);
   document.getElementById('rows').innerHTML=rows.map(v=>
     `<tr><td>${v.row_id}</td>`+
@@ -211,18 +223,30 @@ def scan():
     path = "/tmp/sentry_upload.csv"
     f.save(path)
     client = _client()
-    t0 = time.perf_counter()
     rows = load_csv(path)
-    scored = score_all(rows)
-    correlated, verdicts = run_full(scored, target=20, client=client)
+
+    # Always compute the rules-only result first so we can show the AI's effect.
+    _, det_verdicts = run_full(score_all(rows), target=20, client=None)
+    rules_ids = {v.row_id for v in det_verdicts if v.verdict == "malicious"}
+
+    t0 = time.perf_counter()
+    if client:
+        correlated, verdicts = run_full(score_all(rows), target=20, client=client)
+    else:
+        correlated, verdicts = run_full(score_all(rows), target=20, client=None)
     elapsed = round(time.perf_counter() - t0, 3)
+
     malicious = [v.__dict__ for v in verdicts if v.verdict == "malicious"]
+    final_ids = {v["row_id"] for v in malicious}
     _STATE["correlated"] = correlated
-    _STATE["malicious_ids"] = {v["row_id"] for v in malicious}
+    _STATE["malicious_ids"] = final_ids
     _STATE["truth_ids"] = _ground_truth(path)
     return jsonify({"total": len(rows), "cleared": len(rows) - len(malicious),
                     "malicious": malicious, "elapsed": elapsed,
-                    "ai": client is not None})
+                    "ai": client is not None,
+                    "rules_count": len(rules_ids),
+                    "ai_recovered": sorted(final_ids - rules_ids),
+                    "ai_cleared": sorted(rules_ids - final_ids)})
 
 
 @app.route("/investigate")
@@ -235,14 +259,14 @@ def investigate():
     killchain = [{"step": i + 1, "tactic": _tac(s), "technique": _technique(s),
                   "command": s.command.command_line} for i, s in enumerate(ordered)]
     client = _client()
-    ai_summary = ai_narrative(mal, client)
+    ai = ai_investigation(mal, client)
     return jsonify({
-        "scenario": name_scenario(mal),
-        "ai_summary": ai_summary,
-        "ai_used": ai_summary is not None,
+        "scenario": ai["scenario"] if ai else name_scenario(mal),
+        "ai_summary": ai["narrative"] if ai else None,
+        "objective": ai["objective"] if ai else infer_objective(mal),
+        "ai_used": ai is not None,
         "model": getattr(client, "model", None),
         "killchain": killchain,
-        "objective": infer_objective(mal),
         "playbook": remediation_playbook(mal),
         "traps": find_traps(correlated, mal_ids),
         "report_card": report_card(mal_ids, truth),
