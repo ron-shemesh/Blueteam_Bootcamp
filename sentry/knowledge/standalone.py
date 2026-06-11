@@ -128,6 +128,17 @@ STANDALONE_PATTERNS: list[Pattern] = [
             "T1140", "defense-evasion", "certutil decode payload"),
     Pattern("encoded_blob", r"[a-z0-9+/]{60,}={0,2}", 0.4,
             "T1027", "defense-evasion", "Long encoded blob"),
+    Pattern("prompt_injection",
+            r"(ignore\s+(all\s+|any\s+)?(the\s+)?(previous|prior|above|earlier)\s+(instruction|prompt|message|rule)"
+            r"|disregard\s+(the\s+|all\s+)?(above|previous|prior|earlier|instruction)"
+            r"|you\s+are\s+now\s+\S"
+            r"|</?(system|instructions?|prompt)>"
+            r"|(mark|classify|treat|consider|label)\s+(all|everything|these|them|this|every\s+command)\s+(of\s+them\s+)?(as\s+)?benign"
+            r"|(return|output|respond\s+with)\s+(an?\s+)?empty\s+(list\s+)?(of\s+)?(detection|malicious|flag|threat)"
+            r"|do\s+not\s+(flag|mark|report|detect|classify)\b"
+            r"|this\s+is\s+(definitely\s+)?(not\s+malicious|a\s+benign|completely\s+safe)"
+            r"|prompt\s*injection)", 0.85,
+            "T1562", "defense-evasion", "LLM prompt-injection attempt to manipulate the detector"),
     Pattern("temp_exec", r"\\(temp|appdata|programdata|public)\\[^\s]+\.(exe|ps1|bat|vbs|scr|dll|hta)", 0.4,
             "T1036", "defense-evasion", "Execution from temp/appdata"),
     Pattern("fsutil_usn_delete", r"fsutil\s+usn\s+deletejournal", 0.6,
