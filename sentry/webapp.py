@@ -1,14 +1,27 @@
 # sentry/webapp.py
+import os
 import time
 from flask import Flask, request, jsonify, render_template_string
 from sentry.ingest import load_csv
 from sentry.scoring import score_all
 from sentry.pipeline import run_full
-from sentry.investigate import (build_story, name_scenario, remediation_playbook,
-                                find_traps, report_card)
+from sentry.investigate import (name_scenario, remediation_playbook,
+                                find_traps, report_card, infer_objective)
+from sentry.narrate import narrate
 
 app = Flask(__name__)
 _STATE = {}
+
+
+def _client():
+    """AI client when a key is present, else None (deterministic fallback)."""
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return None
+    try:
+        from sentry.ai_confirm import AnthropicClient
+        return AnthropicClient()
+    except Exception:
+        return None
 
 PAGE = """<!doctype html><html><head><title>SENTRY</title>
 <style>
@@ -57,16 +70,18 @@ def scan():
     f = request.files["csv"]
     path = "/tmp/sentry_upload.csv"
     f.save(path)
+    client = _client()
     t0 = time.perf_counter()
     rows = load_csv(path)
     scored = score_all(rows)
-    correlated, verdicts = run_full(scored, target=20)
+    correlated, verdicts = run_full(scored, target=20, client=client)
     elapsed = round(time.perf_counter() - t0, 3)
     malicious = [v.__dict__ for v in verdicts if v.verdict == "malicious"]
     _STATE["correlated"] = correlated
     _STATE["malicious_ids"] = {v["row_id"] for v in malicious}
     return jsonify({"total": len(rows), "cleared": len(rows) - len(malicious),
-                    "malicious": malicious, "elapsed": elapsed})
+                    "malicious": malicious, "elapsed": elapsed,
+                    "ai": client is not None})
 
 
 @app.route("/investigate")
@@ -76,7 +91,8 @@ def investigate():
     mal = [s for s in correlated if s.command.row_id in mal_ids]
     return jsonify({
         "scenario": name_scenario(mal),
-        "story": build_story(mal),
+        "story": narrate(mal, _client()),
+        "objective": infer_objective(mal),
         "playbook": remediation_playbook(mal),
         "traps": find_traps(correlated, mal_ids),
         "report_card": report_card(mal_ids, mal_ids),  # vs ground truth when available

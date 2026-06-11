@@ -57,6 +57,14 @@ class AnthropicClient:
         start, end = text.find("{"), text.rfind("}") + 1
         return json.loads(text[start:end]).get("malicious_row_ids", [])
 
+    def chat(self, prompt, max_tokens=600):
+        """Free-form completion used by the investigation narrator."""
+        msg = self.client.messages.create(
+            model=self.model, max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return msg.content[0].text.strip()
+
 
 def confirm(scored: list[ScoredRecord], target: int, client,
             candidates: list[ScoredRecord] | None = None) -> set[int]:

@@ -1,9 +1,21 @@
 # sentry/cli.py
 import argparse
 import json
+import os
 import time
 from sentry.ingest import load_csv
 from sentry.scoring import score_all
+
+
+def _make_client(disabled: bool):
+    """Build an AI client when a key is present, unless explicitly disabled."""
+    if disabled or not os.environ.get("ANTHROPIC_API_KEY"):
+        return None
+    try:
+        from sentry.ai_confirm import AnthropicClient
+        return AnthropicClient()
+    except Exception:
+        return None
 
 
 def main():
@@ -11,7 +23,8 @@ def main():
     ap.add_argument("csv", help="path to process-command CSV")
     ap.add_argument("--target", type=int, default=20, help="known malicious count")
     ap.add_argument("--json", action="store_true", help="emit JSON")
-    ap.add_argument("--ai", action="store_true", help="enable AI confirmation")
+    ap.add_argument("--no-ai", action="store_true",
+                    help="force deterministic-only (skip AI even if a key is set)")
     ap.add_argument("--investigate", action="store_true",
                     help="run on-demand investigation (off the clock)")
     args = ap.parse_args()
@@ -19,19 +32,18 @@ def main():
     t0 = time.perf_counter()
     rows = load_csv(args.csv)
     scored = score_all(rows)
-    client = None
-    if args.ai:
-        from sentry.ai_confirm import AnthropicClient
-        client = AnthropicClient()
+    client = _make_client(args.no_ai)
     from sentry.pipeline import run_full
     correlated, verdicts = run_full(scored, target=args.target, client=client)
     elapsed = time.perf_counter() - t0
+    ai_on = client is not None
 
     malicious = [v for v in verdicts if v.verdict == "malicious"]
     if args.json:
         print(json.dumps([v.__dict__ for v in malicious], indent=2))
     else:
-        print(f"Scan complete in {elapsed:.3f}s — {len(rows)} commands, "
+        mode = "AI-assisted" if ai_on else "deterministic"
+        print(f"Scan complete in {elapsed:.3f}s ({mode}) — {len(rows)} commands, "
               f"{len(malicious)} flagged malicious\n")
         for v in sorted(malicious, key=lambda v: v.confidence, reverse=True):
             print(f"  row {v.row_id:>3} | conf {v.confidence:.2f} | "
@@ -40,10 +52,14 @@ def main():
     if getattr(args, "investigate", False):
         from sentry.investigate import (build_story, remediation_playbook,
                                         find_traps, infer_objective)
+        from sentry.narrate import ai_narrative
         mal_ids = {v.row_id for v in malicious}
         mal_records = [s for s in correlated if s.command.row_id in mal_ids]
         print("\n" + "=" * 60 + "\nINVESTIGATION\n" + "=" * 60)
         print(build_story(mal_records))
+        story = ai_narrative(mal_records, client)
+        if story:
+            print(f"\nAI analyst summary:\n{story}")
         print(f"\nInferred objective: {infer_objective(mal_records)}")
         print("\nRemediation playbook:")
         for step in remediation_playbook(mal_records):
