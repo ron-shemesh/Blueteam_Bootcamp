@@ -4,7 +4,7 @@ import csv
 import re
 from sentry.models import CommandRecord
 
-_B64 = re.compile(r"[A-Za-z0-9+/]{4,}={0,2}")
+_B64 = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
 
 
 def load_csv(path: str) -> list[CommandRecord]:

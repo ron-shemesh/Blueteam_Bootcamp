@@ -213,9 +213,12 @@ def test_load_csv_reads_rows_and_strips_label():
     assert rows[0].row_id == 0
 
 def test_normalize_lowercases_and_decodes_base64():
-    rec = normalize_record("powershell.exe", "powershell -enc SGVsbG8=")
-    assert rec.normalized == "powershell -enc sgvsbg8="
-    assert "hello" in rec.decoded.lower()
+    # "SGVsbG8gV29ybGQgVGVzdA==" (22 b64 chars) decodes to "Hello World Test".
+    # Threshold is intentionally high (>=16) so ordinary words are not decoded.
+    cmd = "powershell -enc SGVsbG8gV29ybGQgVGVzdA=="
+    rec = normalize_record("powershell.exe", cmd)
+    assert rec.normalized == cmd.lower()
+    assert "hello world test" in rec.decoded.lower()
 
 def normalize_record(proc, cmd):
     from sentry.models import CommandRecord
