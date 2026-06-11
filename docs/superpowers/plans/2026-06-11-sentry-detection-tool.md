@@ -945,8 +945,15 @@ def confirm(scored: list[ScoredRecord], target: int, client,
         candidates = [s for s in scored if s.band in ("HIGH", "GRAY") or s.escalated]
     mode = choose_mode(len(candidates), target)
     review_set = scored if mode == "HUNT" else candidates
-    keep = client.judge(_payload(review_set), mode, target)
-    keep = list(dict.fromkeys(keep))[:target]   # hard cap
+    raw = client.judge(_payload(review_set), mode, target)
+    # Coerce defensively: an LLM may return ids as strings ("5") or floats.
+    clean = []
+    for rid in raw:
+        try:
+            clean.append(int(rid))
+        except (ValueError, TypeError):
+            pass
+    keep = list(dict.fromkeys(clean))[:target]   # dedupe + hard cap at target
     return set(keep)
 ```
 
