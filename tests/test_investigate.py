@@ -50,3 +50,16 @@ def test_report_card_grades_recall():
     assert card["caught"] == 3
     assert card["evaded"] == 1
     assert "grade" in card
+
+
+# Task 12b
+from sentry.investigate import infer_objective
+
+def test_infer_objective_exfil():
+    items = [_mal(1, "discovery", "whoami"), _mal(2, "exfiltration", "copy \\\\share")]
+    obj = infer_objective(items)
+    assert "exfiltrat" in obj.lower() or "steal" in obj.lower() or "data" in obj.lower()
+
+def test_infer_objective_ransomware():
+    items = [_mal(1, "impact", "vssadmin delete shadows")]
+    assert "ransom" in infer_objective(items).lower() or "destroy" in infer_objective(items).lower()
