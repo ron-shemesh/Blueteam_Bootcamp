@@ -35,3 +35,18 @@ def deterministic_verdict(scored: list[ScoredRecord], target: int = 20) -> list[
 def run_deterministic(scored, target: int = 20):
     correlated = correlate(scored)
     return correlated, deterministic_verdict(correlated, target=target)
+
+
+def run_full(scored, target: int = 20, client=None):
+    correlated = correlate(scored)
+    candidates = [s for s in correlated if s.band in ("HIGH", "GRAY") or s.escalated]
+    if client is None:
+        keep = cap_to_target(candidates, target)
+    else:
+        from sentry.ai_confirm import confirm
+        try:
+            keep = confirm(correlated, target, client, candidates)
+        except Exception:
+            keep = cap_to_target(candidates, target)  # AI failure -> deterministic
+    verdicts = [_to_verdict(s, s.command.row_id in keep) for s in correlated]
+    return correlated, verdicts

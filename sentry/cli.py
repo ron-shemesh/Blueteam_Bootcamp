@@ -11,13 +11,18 @@ def main():
     ap.add_argument("csv", help="path to process-command CSV")
     ap.add_argument("--target", type=int, default=20, help="known malicious count")
     ap.add_argument("--json", action="store_true", help="emit JSON")
+    ap.add_argument("--ai", action="store_true", help="enable AI confirmation")
     args = ap.parse_args()
 
     t0 = time.perf_counter()
     rows = load_csv(args.csv)
-    from sentry.pipeline import run_deterministic
     scored = score_all(rows)
-    _, verdicts = run_deterministic(scored, target=args.target)
+    client = None
+    if args.ai:
+        from sentry.ai_confirm import AnthropicClient
+        client = AnthropicClient()
+    from sentry.pipeline import run_full
+    correlated, verdicts = run_full(scored, target=args.target, client=client)
     elapsed = time.perf_counter() - t0
 
     malicious = [v for v in verdicts if v.verdict == "malicious"]
