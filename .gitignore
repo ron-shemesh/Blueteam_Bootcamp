@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
 .env
+apikey.txt
 data/training/*
 !data/training/.gitkeep

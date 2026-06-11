@@ -8,9 +8,14 @@ from sentry.scoring import score_all
 
 
 def _make_client(disabled: bool):
-    """Build an AI client when a key is present, unless explicitly disabled."""
-    if disabled or not os.environ.get("ANTHROPIC_API_KEY"):
+    """Build an AI client when a key is resolvable, unless explicitly disabled."""
+    from sentry.apikey import load_api_key
+    if disabled:
         return None
+    key = load_api_key()
+    if not key:
+        return None
+    os.environ["ANTHROPIC_API_KEY"] = key
     try:
         from sentry.ai_confirm import AnthropicClient
         return AnthropicClient()
