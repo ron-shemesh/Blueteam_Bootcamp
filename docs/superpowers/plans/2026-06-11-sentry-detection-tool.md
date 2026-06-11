@@ -308,8 +308,8 @@ STANDALONE_PATTERNS: list[Pattern] = [
             "T1105", "command-and-control", "certutil download cradle"),
     Pattern("bitsadmin_download", r"bitsadmin.*/transfer", 0.7,
             "T1105", "command-and-control", "bitsadmin download"),
-    Pattern("sam_dump", r"reg\s+save\s+hklm\\sam", 0.9,
-            "T1003.002", "credential-access", "SAM hive dump"),
+    Pattern("hive_dump", r"reg\s+save\s+hklm\\(sam|system|security)", 0.9,
+            "T1003.002", "credential-access", "Registry hive dump (SAM/SYSTEM/SECURITY)"),
     Pattern("lsass_dump", r"(procdump.*lsass|comsvcs.*minidump)", 0.95,
             "T1003.001", "credential-access", "LSASS memory dump"),
     Pattern("mimikatz", r"sekurlsa|mimikatz|logonpasswords", 0.95,
@@ -341,6 +341,9 @@ STANDALONE_PATTERNS: list[Pattern] = [
     Pattern("copy_to_share",
             r"copy\b.*(\.(save|dat|dmp|zip|7z|cab|bak)|\\(temp|windows|appdata)\\).*\\\\", 0.55,
             "T1074", "collection", "Copy of sensitive/staged file to network share"),
+    Pattern("compress_staging",
+            r"(makecab|compress-archive)\b.*\.(save|dat|dmp|hive|sam|system)", 0.5,
+            "T1074", "collection", "Compression of sensitive/staged data"),
 ]
 ```
 
