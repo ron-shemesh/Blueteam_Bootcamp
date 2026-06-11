@@ -126,8 +126,8 @@ li{margin:4px 0}
   <div id="inv" class="hidden">
     <div class="card"><h3>Scenario</h3><div class="scenario" id="i_scn"></div>
       <div class="muted" id="i_obj" style="margin-top:8px"></div></div>
-    <div class="card ai-summary hidden" id="i_ai_card">
-      <div class="tag">✦ AI ANALYST SUMMARY</div>
+    <div class="card" id="i_ai_card">
+      <div class="tag" id="i_ai_tag"></div>
       <div id="i_ai" style="margin-top:8px"></div></div>
     <div class="card"><h3>Reconstructed kill chain</h3><div id="i_kc"></div></div>
     <div class="card"><h3>Trap detector</h3><div id="i_traps"></div></div>
@@ -168,9 +168,19 @@ async function investigate(){
   btn.textContent='🔍 Investigate'; btn.disabled=false;
   document.getElementById('i_scn').textContent=d.scenario;
   document.getElementById('i_obj').textContent='Objective: '+d.objective;
-  if(d.ai_summary){document.getElementById('i_ai').textContent=d.ai_summary;
-    document.getElementById('i_ai_card').classList.remove('hidden');}
-  else{document.getElementById('i_ai_card').classList.add('hidden');}
+  const aiCard=document.getElementById('i_ai_card');
+  const aiTag=document.getElementById('i_ai_tag');
+  if(d.ai_used){
+    aiCard.className='card ai-summary';
+    aiTag.style.color='var(--green)';
+    aiTag.textContent='✦ AI ANALYST SUMMARY — generated live by Claude ('+(d.model||'')+')';
+    document.getElementById('i_ai').textContent=d.ai_summary;
+  }else{
+    aiCard.className='card';
+    aiTag.style.color='var(--mut)';
+    aiTag.textContent='⚙ DETERMINISTIC — no LLM was called (no API key in apikey.txt, or the call failed)';
+    document.getElementById('i_ai').textContent='Add your key to apikey.txt and re-Investigate to have Claude write the narrative.';
+  }
   document.getElementById('i_kc').innerHTML=d.killchain.map(s=>
     `<div class="step"><span class="num">${s.step}</span>`+
     `<span><span class="tac">${esc(s.tactic)}</span>`+
@@ -224,9 +234,13 @@ def investigate():
     ordered = order_by_killchain(mal)
     killchain = [{"step": i + 1, "tactic": _tac(s), "technique": _technique(s),
                   "command": s.command.command_line} for i, s in enumerate(ordered)]
+    client = _client()
+    ai_summary = ai_narrative(mal, client)
     return jsonify({
         "scenario": name_scenario(mal),
-        "ai_summary": ai_narrative(mal, _client()),
+        "ai_summary": ai_summary,
+        "ai_used": ai_summary is not None,
+        "model": getattr(client, "model", None),
         "killchain": killchain,
         "objective": infer_objective(mal),
         "playbook": remediation_playbook(mal),

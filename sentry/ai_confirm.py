@@ -49,6 +49,11 @@ class AnthropicClient:
             "Respond ONLY with JSON: {\"malicious_row_ids\": [<ints>]}.\n\n"
             f"Commands:\n{json.dumps(payload, indent=2)}"
         )
+        import sys
+        print(f"\n[SENTRY][LLM CALL] detection mode={mode} model={self.model} "
+              f"({len(payload)} commands)\n------- PROMPT SENT TO LLM -------\n{prompt[:1200]}"
+              f"\n... (payload of {len(payload)} commands) ...\n"
+              f"---------------------------------", file=sys.stderr, flush=True)
         msg = self.client.messages.create(
             model=self.model, max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],

@@ -5,6 +5,7 @@ story is written by the LLM. Otherwise we fall back to the deterministic
 kill-chain story so the tool always produces output, key or no key.
 """
 import json
+import sys
 from sentry.investigate import build_story, _tac, _technique
 
 
@@ -26,10 +27,16 @@ def ai_narrative(mal_records, client):
         "Plain prose, no bullet points, no preamble.\n\n"
         + json.dumps(_facts(mal_records), indent=2)
     )
+    model = getattr(client, "model", "?")
+    print(f"\n[SENTRY][LLM CALL] narrative -> model={model}\n"
+          f"------- PROMPT SENT TO LLM -------\n{prompt}\n"
+          f"---------------------------------", file=sys.stderr, flush=True)
     try:
         text = client.chat(prompt)
+        print(f"[SENTRY][LLM REPLY] {text[:200]}...", file=sys.stderr, flush=True)
         return text or None
-    except Exception:
+    except Exception as e:
+        print(f"[SENTRY][LLM ERROR] {e} -> falling back to deterministic", file=sys.stderr, flush=True)
         return None
 
 
