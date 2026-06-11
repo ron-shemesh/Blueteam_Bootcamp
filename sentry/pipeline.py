@@ -1,5 +1,6 @@
 # sentry/pipeline.py
 from sentry.models import ScoredRecord, Verdict
+from sentry.correlation import correlate
 
 
 def _to_verdict(s: ScoredRecord, is_malicious: bool) -> Verdict:
@@ -29,3 +30,8 @@ def deterministic_verdict(scored: list[ScoredRecord], target: int = 20) -> list[
     candidates = [s for s in scored if s.band in ("HIGH", "GRAY") or s.escalated]
     keep = cap_to_target(candidates, target)
     return [_to_verdict(s, s.command.row_id in keep) for s in scored]
+
+
+def run_deterministic(scored, target: int = 20):
+    correlated = correlate(scored)
+    return correlated, deterministic_verdict(correlated, target=target)

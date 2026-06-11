@@ -4,7 +4,6 @@ import json
 import time
 from sentry.ingest import load_csv
 from sentry.scoring import score_all
-from sentry.pipeline import deterministic_verdict
 
 
 def main():
@@ -16,8 +15,9 @@ def main():
 
     t0 = time.perf_counter()
     rows = load_csv(args.csv)
+    from sentry.pipeline import run_deterministic
     scored = score_all(rows)
-    verdicts = deterministic_verdict(scored, target=args.target)
+    _, verdicts = run_deterministic(scored, target=args.target)
     elapsed = time.perf_counter() - t0
 
     malicious = [v for v in verdicts if v.verdict == "malicious"]
