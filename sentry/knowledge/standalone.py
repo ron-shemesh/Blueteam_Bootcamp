@@ -42,4 +42,6 @@ STANDALONE_PATTERNS: list[Pattern] = [
             "T1027", "defense-evasion", "Long encoded blob"),
     Pattern("temp_exec", r"\\(temp|appdata|programdata)\\[^\s]+\.(exe|ps1|bat|vbs)", 0.4,
             "T1036", "defense-evasion", "Execution from temp/appdata"),
+    Pattern("copy_to_share", r"copy\b.+\\\\\S+", 0.75,
+            "T1039", "exfiltration", "Copy to network share (data staging/exfil)"),
 ]
