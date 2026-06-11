@@ -7,8 +7,7 @@ from sentry.ingest import load_csv
 from sentry.scoring import score_all
 from sentry.pipeline import run_full
 from sentry.investigate import (name_scenario, remediation_playbook, find_traps,
-                                report_card, infer_objective, order_by_killchain,
-                                _tac, _technique)
+                                infer_objective)
 from sentry.narrate import ai_investigation
 
 app = Flask(__name__)
@@ -125,12 +124,12 @@ li{margin:4px 0}
   </div>
 
   <div id="inv" class="hidden">
-    <div class="card"><h3>Scenario</h3><div class="scenario" id="i_scn"></div>
-      <div class="muted" id="i_obj" style="margin-top:8px"></div></div>
     <div class="card" id="i_ai_card">
       <div class="tag" id="i_ai_tag"></div>
-      <div id="i_ai" style="margin-top:8px"></div></div>
-    <div class="card"><h3>Reconstructed kill chain</h3><div id="i_kc"></div></div>
+      <h3 style="margin-top:8px">Scenario</h3>
+      <div class="scenario" id="i_scn"></div>
+      <div class="muted" id="i_obj" style="margin-top:8px"></div>
+      <div id="i_sum" style="margin-top:10px"></div></div>
     <div class="card"><h3>Trap detector</h3><div id="i_traps"></div></div>
     <div class="card"><h3>Remediation playbook</h3><ul id="i_pb"></ul></div>
     <div class="card"><h3>Red team report card</h3>
@@ -180,27 +179,19 @@ async function investigate(){
   btn.textContent='🔍 Investigate'; btn.disabled=false;
   document.getElementById('i_scn').textContent=d.scenario;
   document.getElementById('i_obj').textContent='Objective: '+d.objective;
+  document.getElementById('i_sum').textContent=d.summary||'';
   const aiCard=document.getElementById('i_ai_card');
   const aiTag=document.getElementById('i_ai_tag');
   if(d.ai_used){
     aiCard.className='card ai-summary';
     aiTag.style.color='var(--green)';
-    aiTag.textContent='✦ AI ANALYST SUMMARY — generated live by Claude ('+(d.model||'')+')';
-    document.getElementById('i_ai').textContent=d.ai_summary;
+    aiTag.textContent='✦ GENERATED LIVE BY CLAUDE ('+(d.model||'')+')';
   }else{
     aiCard.className='card';
     aiTag.style.color='var(--mut)';
     aiTag.textContent='⚙ DETERMINISTIC — no LLM was called (no API key in apikey.txt, or the call failed)';
-    document.getElementById('i_ai').textContent='Add your key to apikey.txt and re-Investigate to have Claude write the narrative.';
   }
-  document.getElementById('i_kc').innerHTML=d.killchain.map(s=>
-    `<div class="step"><span class="num">${s.step}</span>`+
-    `<span><span class="tac">${esc(s.tactic)}</span>`+
-    `<span class="tech">${esc(s.technique)||''}</span><br>`+
-    `<span class="cmd">${esc(s.command)}</span></span></div>`).join('');
-  document.getElementById('i_traps').innerHTML = d.traps.length
-    ? d.traps.map(t=>`<div class="step"><span class="cmd">row ${t.row_id}: ${esc(t.command)}</span><br><span class="muted">${esc(t.why_cleared)}</span></div>`).join('')
-    : '<span class="muted">No decoys — every suspicious-looking command was either confirmed or genuinely benign.</span>';
+  document.getElementById('i_traps').textContent=d.trap_analysis;
   document.getElementById('i_pb').innerHTML=d.playbook.map(p=>`<li>${esc(p)}</li>`).join('');
   const rc=d.report_card; const g=rc.grade;
   const ge=document.getElementById('i_grade'); ge.textContent=g; ge.className='grade g'+g;
@@ -249,27 +240,39 @@ def scan():
                     "ai_cleared": sorted(rules_ids - final_ids)})
 
 
+def _red_grade(evaded):
+    """Grade the RED team on evasion: caught everything (0 evaded) => F."""
+    return ("F" if evaded == 0 else "D" if evaded <= 2 else
+            "C" if evaded <= 5 else "B" if evaded <= 9 else "A")
+
+
 @app.route("/investigate")
 def investigate():
     correlated = _STATE.get("correlated", [])
     mal_ids = _STATE.get("malicious_ids", set())
-    truth = _STATE.get("truth_ids") or mal_ids  # use real labels when present
+    truth = _STATE.get("truth_ids") or mal_ids  # real labels when present
     mal = [s for s in correlated if s.command.row_id in mal_ids]
-    ordered = order_by_killchain(mal)
-    killchain = [{"step": i + 1, "tactic": _tac(s), "technique": _technique(s),
-                  "command": s.command.command_line} for i, s in enumerate(ordered)]
+    decoys = find_traps(correlated, mal_ids)
+    caught = len(mal_ids & truth)
+    evaded = len(truth - mal_ids)
+    grade = _red_grade(evaded)
+
     client = _client()
-    ai = ai_investigation(mal, client)
+    ai = ai_investigation(mal, decoys, caught, evaded, client)
+    fallback_comment = ("Red team report card: total wipeout — we caught every single "
+                        "command. Did you even try to hide?" if evaded == 0 else
+                        f"Red team slipped {evaded} past us — not bad, but we still see you.")
     return jsonify({
         "scenario": ai["scenario"] if ai else name_scenario(mal),
-        "ai_summary": ai["narrative"] if ai else None,
         "objective": ai["objective"] if ai else infer_objective(mal),
+        "summary": ai["summary"] if ai else None,
+        "trap_analysis": ai["trap_analysis"] if ai else
+            (f"{len(decoys)} decoy(s) cleared." if decoys else "No decoys were planted."),
+        "playbook": ai["playbook"] if ai else remediation_playbook(mal),
+        "report_card": {"caught": caught, "evaded": evaded, "grade": grade,
+                        "comment": ai["report_comment"] if ai else fallback_comment},
         "ai_used": ai is not None,
         "model": getattr(client, "model", None),
-        "killchain": killchain,
-        "playbook": remediation_playbook(mal),
-        "traps": find_traps(correlated, mal_ids),
-        "report_card": report_card(mal_ids, truth),
     })
 
 

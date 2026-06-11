@@ -40,7 +40,9 @@ def run_deterministic(scored, target: int = 20):
 def run_full(scored, target: int = 20, client=None):
     correlated = correlate(scored)
     candidates = [s for s in correlated if s.band in ("HIGH", "GRAY") or s.escalated]
-    if client is None:
+    # AI runs ONLY when the rules didn't land on exactly `target` candidates.
+    # Exactly `target` => trust the deterministic result (fast, no AI call).
+    if client is None or len(candidates) == target:
         keep = cap_to_target(candidates, target)
     else:
         from sentry.ai_confirm import confirm
@@ -50,3 +52,9 @@ def run_full(scored, target: int = 20, client=None):
             keep = cap_to_target(candidates, target)  # AI failure -> deterministic
     verdicts = [_to_verdict(s, s.command.row_id in keep) for s in correlated]
     return correlated, verdicts
+
+
+def ai_should_run(scored, target: int = 20) -> bool:
+    """True if the rules did NOT find exactly `target` candidates (so AI is needed)."""
+    candidates = [s for s in correlate(scored) if s.band in ("HIGH", "GRAY") or s.escalated]
+    return len(candidates) != target

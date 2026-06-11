@@ -40,21 +40,33 @@ class AnthropicClient:
         self.model = model or os.environ.get("SENTRY_MODEL", "claude-sonnet-4-6")
 
     def judge(self, payload, mode, target):
-        instructions = {
-            "PRUNE": f"The deterministic engine flagged {len(payload)} commands but exactly "
-                     f"{target} are malicious. Drop the weakest-evidence false positives. "
-                     f"Return the {target} row_ids that are genuinely malicious.",
-            "VERIFY": f"Confirm these {target} flagged commands. Swap out any that are benign "
-                      f"for stronger candidates if obvious.",
-            "HUNT": f"The engine found fewer than {target} malicious commands. You are given "
-                    f"ALL commands with their scores. Find up to {target} genuinely malicious "
-                    f"ones, including groups that are benign alone but malicious together. "
-                    f"Do not guess: only include commands more likely malicious than benign.",
+        mode_instr = {
+            "PRUNE": f"The rules engine flagged {len(payload)} candidates, but ground truth says "
+                     f"EXACTLY {target} are malicious. Identify the {target} strongest; drop the "
+                     f"weakest-evidence false positives.",
+            "VERIFY": f"Confirm the {target} malicious commands and correct any obvious mistake.",
+            "HUNT": f"The rules engine found FEWER than {target} malicious commands, so it missed "
+                    f"some. Find ALL {target}. Pay special attention to stealthy LOLBins the rules "
+                    f"under-scored, and to multi-step campaigns where each command looks benign "
+                    f"alone but is malicious together. Return up to {target} row_ids.",
         }[mode]
         prompt = (
-            "You are a SOC Tier-2 analyst reviewing process commands.\n"
-            f"{instructions}\n"
-            "Respond ONLY with JSON: {\"malicious_row_ids\": [<ints>]}.\n\n"
+            "You are an elite blue-team threat hunter analysing process commands captured from a "
+            "single host during ONE incident. Ground truth: exactly "
+            f"{target} of these commands are malicious; the rest are ordinary background noise. "
+            "Each row includes the detection engine's risk score and matched signals as HINTS — "
+            "useful, but not authoritative.\n\n"
+            "Malicious patterns to weigh: LOLBins abused for execution/persistence/evasion "
+            "(certutil, bitsadmin, mshta, regsvr32, rundll32, wmic, schtasks, at, sc, esentutl, "
+            "vssadmin, bcdedit, wevtutil, reg save); credential access (mimikatz, procdump on "
+            "lsass, reg save SAM/SYSTEM, ntds.dit copy); encoded/obfuscated payloads (-enc, "
+            "base64 blobs, hidden windows); download cradles (iwr/curl/certutil/bitsadmin to a "
+            "URL); and multi-step campaigns that share a file/path or form a recon -> dump -> "
+            "stage -> exfil chain. Benign noise = ordinary dev/admin/CI work (git, npm, docker, "
+            "kubectl, python, routine file ops).\n\n"
+            f"{mode_instr}\n\n"
+            "Think it through, then respond with ONLY this JSON and nothing else: "
+            "{\"malicious_row_ids\": [<ints>]}\n\n"
             f"Commands:\n{json.dumps(payload, indent=2)}"
         )
         import sys

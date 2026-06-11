@@ -45,23 +45,42 @@ def narrate(mal_records, client=None):
     return ai_narrative(mal_records, client) or build_story(mal_records)
 
 
-def ai_investigation(mal_records, client):
-    """Ask the LLM to produce {scenario, objective, narrative} from the detections.
+_REQUIRED = ("scenario", "objective", "summary", "trap_analysis", "playbook", "report_comment")
 
-    Returns the parsed dict, or None if there is no client / the call fails /
-    the response is malformed (callers fall back to deterministic answers).
+
+def ai_investigation(mal_records, decoys, caught, evaded, client):
+    """Ask the LLM to generate the whole investigation in one call.
+
+    Returns a dict with keys in _REQUIRED, or None if there is no client / the
+    call fails / the response is malformed (callers fall back to deterministic).
     """
     if not mal_records or client is None:
         return None
+    decoy_cmds = [d["command"] for d in decoys]
     prompt = (
-        "You are a senior SOC analyst performing incident response. A detection "
-        "engine has already CONFIRMED the process commands below as malicious in a "
-        "breach; each is tagged with its MITRE tactic and technique. Analyse them "
-        "and respond ONLY with a JSON object with exactly these keys:\n"
-        '  "scenario": a short attack name (e.g. "Credential theft & exfiltration"),\n'
-        '  "objective": one sentence on the attacker\'s ultimate goal,\n'
-        '  "narrative": a 3-5 sentence plain-prose account of the attack, in order.\n\n'
-        + json.dumps(_facts(mal_records), indent=2)
+        "You are the lead incident-response analyst presenting findings to executives "
+        "after a breach. A detection engine has CONFIRMED the commands in `malicious` "
+        "below as part of the attack; each is tagged with its MITRE ATT&CK tactic and "
+        "technique. The commands in `decoys` looked suspicious but were cleared as benign "
+        "(likely bait the attacker planted to trigger false alarms).\n"
+        f"Scoreboard: our blue team CAUGHT {caught} of the attacker's commands; they "
+        f"EVADED {evaded}.\n\n"
+        "Produce a tight, pitch-ready report. Respond with ONLY a JSON object (no markdown, "
+        "no prose outside it) with EXACTLY these keys:\n"
+        '  "scenario": a punchy attack name a CISO would recognise (e.g. "Active Directory '
+        'credential theft -> ransomware staging"),\n'
+        '  "objective": ONE sentence naming the attacker\'s ultimate goal and what was at risk,\n'
+        '  "summary": 2-3 sentences telling the attack story in order, naming the key '
+        "techniques in plain English (no row numbers, no raw command dumps),\n"
+        '  "trap_analysis": 1-2 sentences on the decoys — what bait was planted and why we '
+        "did not bite; if the decoy list is empty, say no decoys were detected,\n"
+        '  "playbook": an array of 3-6 SHORT, concrete, prioritised remediation actions in '
+        "imperative voice (e.g. 'Isolate the host', 'Rotate all local and domain credentials'),\n"
+        '  "report_comment": a short, genuinely FUNNY one-liner roasting the RED TEAM about '
+        "their tradecraft. If they evaded 0 (we caught everything), absolutely roast them for "
+        "being completely busted; if they evaded several, give backhanded grudging respect.\n\n"
+        "malicious: " + json.dumps(_facts(mal_records)) +
+        "\ndecoys: " + json.dumps(decoy_cmds)
     )
     model = getattr(client, "model", "?")
     print(f"\n[SENTRY][LLM CALL] investigation -> model={model}\n"
@@ -70,7 +89,7 @@ def ai_investigation(mal_records, client):
     try:
         text = client.chat(prompt, max_tokens=2000)
         obj = json.loads(text[text.find("{"):text.rfind("}") + 1])
-        if all(k in obj for k in ("scenario", "objective", "narrative")):
+        if all(k in obj for k in _REQUIRED):
             print(f"[SENTRY][LLM REPLY] scenario={obj['scenario']!r}", file=sys.stderr, flush=True)
             return obj
         return None
