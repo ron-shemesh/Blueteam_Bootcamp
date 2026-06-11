@@ -2,6 +2,7 @@
 import re
 from sentry.models import ScoredRecord
 from sentry.knowledge.combos import COMBO_PATTERNS
+from sentry.scoring import HIGH, GRAY_LOW
 
 _PATH = re.compile(r"(?:[a-z]:)?\\[\w\\.$-]+|\\\\[\w\\.$-]+|/[\w/.-]+", re.IGNORECASE)
 _FILE = re.compile(r"\b[\w-]+\.(exe|dll|ps1|bat|vbs|zip|7z|dat|save|cab)\b", re.IGNORECASE)
@@ -45,13 +46,19 @@ def correlate(scored: list[ScoredRecord]) -> list[ScoredRecord]:
                 if matched_rows else set()
             if not shared:
                 continue
+        # Shared-artifact combos are proven-connected -> high confidence.
+        # Artifact-free combos (e.g. recon sweep) may be coincidental benign
+        # activity, so only raise them to GRAY for review, never auto-malicious.
+        escalate_to = 0.8 if combo.require_shared_artifact else 0.5
         for s in matched_rows:
             s.escalated = True
             s.combo_hits.append(combo.id)
             if combo.tactic not in s.tactic_hints:
                 s.tactic_hints.append(combo.tactic)
             s.signals.append(f"combo: {combo.description} [{combo.mitre_technique}]")
-            s.risk_score = max(s.risk_score, 0.8)
+            s.risk_score = max(s.risk_score, escalate_to)
+            s.band = ("HIGH" if s.risk_score >= HIGH
+                      else "GRAY" if s.risk_score >= GRAY_LOW else "LOW")
 
     # 3. isolate lone scary rows (decoy candidates): GRAY/HIGH with no links, no combo
     for s in scored:
