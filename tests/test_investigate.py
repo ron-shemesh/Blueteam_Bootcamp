@@ -22,3 +22,19 @@ def test_build_story_returns_text():
     story = build_story(items)
     assert "discovery" in story.lower() or "recon" in story.lower()
     assert len(story) > 20
+
+
+# Task 11
+from sentry.investigate import find_traps, remediation_playbook
+
+def test_find_traps_returns_decoys():
+    rec = CommandRecord(row_id=9, process_name="x", command_line="powershell -enc AAAA")
+    decoy = ScoredRecord(command=rec, risk_score=0.5, band="GRAY", decoy_candidate=True)
+    traps = find_traps([decoy])
+    assert len(traps) == 1
+    assert traps[0]["row_id"] == 9
+
+def test_remediation_playbook_maps_tactics():
+    items = [_mal(3, "credential-access", "mimikatz")]
+    pb = remediation_playbook(items)
+    assert any("credential" in step.lower() or "rotate" in step.lower() for step in pb)
