@@ -84,4 +84,5 @@ def investigate():
 
 
 if __name__ == "__main__":
-    app.run(port=5000, debug=True)
+    # 5050, not 5000: macOS AirPlay Receiver occupies 5000 by default.
+    app.run(port=5050, debug=True)
