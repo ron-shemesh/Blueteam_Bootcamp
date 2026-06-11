@@ -65,8 +65,10 @@ class AnthropicClient:
             "stage -> exfil chain. Benign noise = ordinary dev/admin/CI work (git, npm, docker, "
             "kubectl, python, routine file ops).\n\n"
             f"{mode_instr}\n\n"
-            "Think it through, then respond with ONLY this JSON and nothing else: "
-            "{\"malicious_row_ids\": [<ints>]}\n\n"
+            "For EVERY command you judge malicious, give its row_id, the MITRE technique id "
+            "(e.g. T1003.001; best guess if unsure), and a short reason. Respond with ONLY this "
+            "JSON and nothing else:\n"
+            '{"detections": [{"row_id": <int>, "technique": "<Txxxx>", "reason": "<short why>"}]}\n\n'
             f"Commands:\n{json.dumps(payload, indent=2)}"
         )
         import sys
@@ -80,7 +82,7 @@ class AnthropicClient:
         )
         text = _text(msg)
         start, end = text.find("{"), text.rfind("}") + 1
-        return json.loads(text[start:end]).get("malicious_row_ids", [])
+        return json.loads(text[start:end]).get("detections", [])
 
     def chat(self, prompt, max_tokens=2000):
         """Free-form completion used by the investigation narrator."""
@@ -92,18 +94,30 @@ class AnthropicClient:
 
 
 def confirm(scored: list[ScoredRecord], target: int, client,
-            candidates: list[ScoredRecord] | None = None) -> set[int]:
+            candidates: list[ScoredRecord] | None = None) -> dict:
+    """Return {row_id: {"technique", "reason"}} for the AI-judged malicious rows.
+
+    Deduped and hard-capped at `target`. Defensive about the LLM returning ids as
+    strings/floats or omitting fields.
+    """
     if candidates is None:
         candidates = [s for s in scored if s.band in ("HIGH", "GRAY") or s.escalated]
     mode = choose_mode(len(candidates), target)
     review_set = scored if mode == "HUNT" else candidates
     raw = client.judge(_payload(review_set), mode, target)
-    # Coerce defensively: an LLM may return ids as strings ("5") or floats.
-    clean = []
-    for rid in raw:
+    details = {}
+    for item in raw:
+        if isinstance(item, dict):
+            rid, tech, reason = item.get("row_id"), item.get("technique"), item.get("reason")
+        else:
+            rid, tech, reason = item, None, None  # tolerate a bare id
         try:
-            clean.append(int(rid))
+            rid = int(rid)
         except (ValueError, TypeError):
-            pass
-    keep = list(dict.fromkeys(clean))[:target]   # dedupe + hard cap at target
-    return set(keep)
+            continue
+        if rid in details:
+            continue
+        details[rid] = {"technique": tech, "reason": reason}
+        if len(details) >= target:   # hard cap at target
+            break
+    return details

@@ -14,14 +14,15 @@ def test_choose_mode():
 class FakeClient:
     def __init__(self, keep_ids): self.keep_ids = keep_ids
     def judge(self, payload, mode, target):
-        # returns the row_ids the AI considers malicious
-        return self.keep_ids
+        # returns per-command detections the AI considers malicious
+        return [{"row_id": i, "technique": "T1059", "reason": "test"} for i in self.keep_ids]
 
 def test_confirm_prune_respects_cap():
     scored = [_s(i, 0.5, "GRAY") for i in range(25)]
     client = FakeClient(keep_ids=list(range(20)))
     final = confirm(scored, target=20, client=client)
-    assert len(final) == 20
+    assert len(final) == 20            # dict of 20 row_ids
+    assert final[0]["technique"] == "T1059"
 
 def test_confirm_fallback_when_client_none():
     # When client is None, run_full falls back to deterministic cap.

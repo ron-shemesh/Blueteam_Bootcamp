@@ -42,15 +42,29 @@ def run_full(scored, target: int = 20, client=None):
     candidates = [s for s in correlated if s.band in ("HIGH", "GRAY") or s.escalated]
     # AI runs ONLY when the rules didn't land on exactly `target` candidates.
     # Exactly `target` => trust the deterministic result (fast, no AI call).
+    ai_details = {}
     if client is None or len(candidates) == target:
         keep = cap_to_target(candidates, target)
     else:
         from sentry.ai_confirm import confirm
         try:
-            keep = confirm(correlated, target, client, candidates)
+            ai_details = confirm(correlated, target, client, candidates)
+            keep = set(ai_details)
         except Exception:
             keep = cap_to_target(candidates, target)  # AI failure -> deterministic
-    verdicts = [_to_verdict(s, s.command.row_id in keep) for s in correlated]
+
+    verdicts = []
+    for s in correlated:
+        is_mal = s.command.row_id in keep
+        v = _to_verdict(s, is_mal)
+        # Rows the AI recovered have no deterministic signals -> use the AI's
+        # technique/reason so every flagged row explains itself.
+        if is_mal and not s.signals and s.command.row_id in ai_details:
+            det = ai_details[s.command.row_id]
+            v.reason = det.get("reason") or "Flagged by AI threat hunter"
+            if det.get("technique"):
+                v.mitre_technique = det["technique"]
+        verdicts.append(v)
     return correlated, verdicts
 
 
