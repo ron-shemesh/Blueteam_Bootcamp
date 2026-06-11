@@ -66,10 +66,13 @@ REMEDIATION = {
 }
 
 
-def find_traps(scored: list[ScoredRecord]) -> list[dict]:
+def find_traps(scored: list[ScoredRecord], malicious_ids=frozenset()) -> list[dict]:
+    # A trap is a row that looked suspicious but we did NOT flag as malicious.
+    # Exclude anything in the final malicious set — those are real detections.
     return [{"row_id": s.command.row_id, "command": s.command.command_line,
              "why_cleared": "Scary-looking but isolated — no linked rows or campaign chain."}
-            for s in scored if s.decoy_candidate]
+            for s in scored
+            if s.decoy_candidate and s.command.row_id not in malicious_ids]
 
 
 def remediation_playbook(items: list[ScoredRecord]) -> list[str]:
@@ -96,20 +99,28 @@ def report_card(detected_ids: set[int], ground_truth_ids: set[int]) -> dict:
             "grade": grade, "comment": quip}
 
 
+# Ordered by how "goal-like" the tactic is. Goal tactics (what the attacker
+# ultimately wanted) rank above means tactics (how they got there), so the
+# inferred objective reflects intent rather than the deepest mechanical step.
 OBJECTIVE = {
     "impact": "Destroy or ransom data — the attacker reached the impact stage "
               "(shadow-copy deletion / recovery disabling).",
     "exfiltration": "Steal and exfiltrate data — the attacker staged and moved data out.",
-    "collection": "Collect sensitive data for theft — staging was underway.",
     "credential-access": "Harvest credentials to expand access.",
+    "collection": "Collect sensitive data for theft — staging was underway.",
     "lateral-movement": "Spread to other hosts across the environment.",
     "persistence": "Establish a durable foothold for return access.",
     "discovery": "Reconnaissance — the attacker was profiling the host.",
+    "command-and-control": "Establish remote control and pull in additional tooling.",
+    "execution": "Execute attacker-controlled code on the host.",
 }
 
 
 def infer_objective(items: list[ScoredRecord]) -> str:
     if not items:
         return "No malicious activity detected."
-    deepest = max(items, key=lambda s: _ORDER.get(_tac(s), -1))
-    return OBJECTIVE.get(_tac(deepest), "Suspicious activity of unclear objective.")
+    present = {_tac(s) for s in items}
+    for tactic, objective in OBJECTIVE.items():
+        if tactic in present:
+            return objective
+    return "Suspicious activity of unclear objective."

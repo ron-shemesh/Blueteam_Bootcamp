@@ -40,15 +40,15 @@ def main():
     if getattr(args, "investigate", False):
         from sentry.investigate import (build_story, remediation_playbook,
                                         find_traps, infer_objective)
-        mal_records = [s for s in correlated if s.command.row_id in
-                       {v.row_id for v in malicious}]
+        mal_ids = {v.row_id for v in malicious}
+        mal_records = [s for s in correlated if s.command.row_id in mal_ids]
         print("\n" + "=" * 60 + "\nINVESTIGATION\n" + "=" * 60)
         print(build_story(mal_records))
         print(f"\nInferred objective: {infer_objective(mal_records)}")
         print("\nRemediation playbook:")
         for step in remediation_playbook(mal_records):
             print(f"  - {step}")
-        traps = find_traps(correlated)
+        traps = find_traps(correlated, mal_ids)
         if traps:
             print(f"\nTrap detector: {len(traps)} decoy(s) cleared:")
             for t in traps:

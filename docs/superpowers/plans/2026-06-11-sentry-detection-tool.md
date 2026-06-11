@@ -1062,7 +1062,7 @@ from sentry.models import ScoredRecord
 
 KILLCHAIN_ORDER = [
     "initial-access", "execution", "persistence", "privilege-escalation",
-    "defense-evasion", "credential-access", "discovery", "lateral-movement",
+    "defense-evasion", "discovery", "credential-access", "lateral-movement",
     "collection", "command-and-control", "exfiltration", "impact",
 ]
 _ORDER = {t: i for i, t in enumerate(KILLCHAIN_ORDER)}
@@ -1172,10 +1172,13 @@ REMEDIATION = {
 }
 
 
-def find_traps(scored: list[ScoredRecord]) -> list[dict]:
+def find_traps(scored: list[ScoredRecord], malicious_ids=frozenset()) -> list[dict]:
+    # A trap is a row that looked suspicious but we did NOT flag as malicious.
+    # Exclude anything in the final malicious set — those are real detections.
     return [{"row_id": s.command.row_id, "command": s.command.command_line,
              "why_cleared": "Scary-looking but isolated — no linked rows or campaign chain."}
-            for s in scored if s.decoy_candidate]
+            for s in scored
+            if s.decoy_candidate and s.command.row_id not in malicious_ids]
 
 
 def remediation_playbook(items: list[ScoredRecord]) -> list[str]:
@@ -1295,23 +1298,31 @@ Expected: FAIL with "cannot import name 'infer_objective'"
 
 ```python
 # append to sentry/investigate.py
+# Ordered by how "goal-like" the tactic is. Goal tactics (what the attacker
+# ultimately wanted) rank above means tactics (how they got there), so the
+# inferred objective reflects intent rather than the deepest mechanical step.
 OBJECTIVE = {
     "impact": "Destroy or ransom data — the attacker reached the impact stage "
               "(shadow-copy deletion / recovery disabling).",
     "exfiltration": "Steal and exfiltrate data — the attacker staged and moved data out.",
-    "collection": "Collect sensitive data for theft — staging was underway.",
     "credential-access": "Harvest credentials to expand access.",
+    "collection": "Collect sensitive data for theft — staging was underway.",
     "lateral-movement": "Spread to other hosts across the environment.",
     "persistence": "Establish a durable foothold for return access.",
     "discovery": "Reconnaissance — the attacker was profiling the host.",
+    "command-and-control": "Establish remote control and pull in additional tooling.",
+    "execution": "Execute attacker-controlled code on the host.",
 }
 
 
 def infer_objective(items: list[ScoredRecord]) -> str:
     if not items:
         return "No malicious activity detected."
-    deepest = max(items, key=lambda s: _ORDER.get(_tac(s), -1))
-    return OBJECTIVE.get(_tac(deepest), "Suspicious activity of unclear objective.")
+    present = {_tac(s) for s in items}
+    for tactic, objective in OBJECTIVE.items():
+        if tactic in present:
+            return objective
+    return "Suspicious activity of unclear objective."
 ```
 
 - [ ] **Step 4: Run to verify pass**
@@ -1341,15 +1352,15 @@ In `sentry/cli.py`, after printing the verdict, add:
     if getattr(args, "investigate", False):
         from sentry.investigate import (build_story, remediation_playbook,
                                         find_traps, infer_objective)
-        mal_records = [s for s in correlated if s.command.row_id in
-                       {v.row_id for v in malicious}]
+        mal_ids = {v.row_id for v in malicious}
+        mal_records = [s for s in correlated if s.command.row_id in mal_ids]
         print("\n" + "=" * 60 + "\nINVESTIGATION\n" + "=" * 60)
         print(build_story(mal_records))
         print(f"\nInferred objective: {infer_objective(mal_records)}")
         print("\nRemediation playbook:")
         for step in remediation_playbook(mal_records):
             print(f"  - {step}")
-        traps = find_traps(correlated)
+        traps = find_traps(correlated, mal_ids)
         if traps:
             print(f"\nTrap detector: {len(traps)} decoy(s) cleared:")
             for t in traps:
@@ -1464,7 +1475,7 @@ def investigate():
         "scenario": name_scenario(mal),
         "story": build_story(mal),
         "playbook": remediation_playbook(mal),
-        "traps": find_traps(correlated),
+        "traps": find_traps(correlated, mal_ids),
         "report_card": report_card(mal_ids, mal_ids),  # vs ground truth when available
     })
 
