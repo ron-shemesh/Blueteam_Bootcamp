@@ -38,3 +38,15 @@ def test_remediation_playbook_maps_tactics():
     items = [_mal(3, "credential-access", "mimikatz")]
     pb = remediation_playbook(items)
     assert any("credential" in step.lower() or "rotate" in step.lower() for step in pb)
+
+
+# Task 12
+from sentry.investigate import report_card
+
+def test_report_card_grades_recall():
+    detected = {1, 2, 3}
+    ground_truth = {1, 2, 3, 4}   # we missed row 4
+    card = report_card(detected, ground_truth)
+    assert card["caught"] == 3
+    assert card["evaded"] == 1
+    assert "grade" in card
