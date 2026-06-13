@@ -190,7 +190,9 @@ async function scan(){
     document.getElementById('rows_rules').innerHTML =
       fast.rules_high.map(v=>rowHTML(v)).join('') ||
       '<tr><td colspan=4 class="muted">no high-confidence rule hits — AI is reviewing…</td></tr>';
-    note.innerHTML=`<span class="spinner"></span> ⚡ ${fast.rules_high.length} high-confidence detection(s) in <b>${fastSec}s</b> — AI now reviewing all ${fast.total} commands…`;
+    note.innerHTML = fast.rules_high.length
+      ? `<span class="spinner"></span> ⚡ <b>${fast.rules_high.length} high-confidence detection(s) in ${fastSec}s — start responding to these now.</b> The full AI review is running over all ${fast.total} commands…`
+      : `<span class="spinner"></span> No high-confidence rule hits yet — AI is reviewing all ${fast.total} commands…`;
 
     // PHASE 2 — full AI-reviewed result
     const fd2=new FormData(); fd2.append('csv',file);

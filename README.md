@@ -38,9 +38,12 @@ adds the AI confirmation pass and the AI-written report.
 The console answers in two stages so you never wait on a blank screen:
 
 1. **Instantly (~0.1s):** a **"Confirmed by rules"** table fills with the
-   high-confidence (score ≥ 0.9) deterministic detections — the concrete hits you
-   can act on immediately — while a spinner shows the AI is still reviewing the
-   rest. The timing reads e.g. `0.18s → …`.
+   high-confidence (score ≥ 0.9) deterministic detections. These are the **first,
+   actionable response** — concrete, near-certain malicious commands an analyst can
+   **start responding to right away** (isolate, kill, rotate) **without waiting for
+   the AI**. A spinner and a call-to-action banner ("start responding to these
+   now…") show the full AI review is still running in the background. The timing
+   reads e.g. `0.18s → …`.
 2. **When the AI finishes (~30s):** a **"Found by AI"** table appears with the
    additional commands the AI surfaced (campaigns the rules missed). If the AI
    judges one of the high-confidence rule hits to be benign, that row is shown
