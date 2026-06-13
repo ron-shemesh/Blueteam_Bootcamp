@@ -121,7 +121,7 @@ color:var(--green);margin-left:6px}
       <div class="in"><div class="n" id="f_in">0</div><div class="l">commands in</div></div>
       <div class="cl"><div class="n" id="f_cl">0</div><div class="l">cleared benign</div></div>
       <div class="mal"><div class="n" id="f_mal">0</div><div class="l">flagged malicious</div></div>
-      <div class="tm"><div class="n" id="f_tm">–</div><div class="l">first hit → full scan</div></div>
+      <div class="tm"><div class="n" id="f_tm">–</div><div class="l" id="f_tm_l">scan time</div></div>
     </div>
     <div id="ainote" class="status"></div>
     <div class="card">
@@ -199,7 +199,13 @@ async function scan(){
     else { mode.textContent='deterministic'; mode.className='chip det'; }
     document.getElementById('f_cl').textContent=d.cleared;
     document.getElementById('f_mal').textContent=d.malicious_count;
-    document.getElementById('f_tm').innerHTML=`${fastSec}s <span class="muted">→</span> ${d.elapsed}s`;
+    if(d.ai_ran){
+      document.getElementById('f_tm').innerHTML=`${fastSec}s <span class="muted">→</span> ${d.elapsed}s`;
+      document.getElementById('f_tm_l').textContent='detection → AI review';
+    }else{
+      document.getElementById('f_tm').textContent=`${d.elapsed}s`;
+      document.getElementById('f_tm_l').textContent='scan time';
+    }
     const clearedN=d.rules_high.filter(v=>v.cleared).length;
     // rules section, now with any AI overrules marked in place
     document.getElementById('rows_rules').innerHTML =

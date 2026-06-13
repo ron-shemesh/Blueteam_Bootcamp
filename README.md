@@ -46,7 +46,9 @@ The console answers in two stages so you never wait on a blank screen:
    judges one of the high-confidence rule hits to be benign, that row is shown
    **struck-through in place** ("AI cleared as benign") rather than silently
    removed — the AI has the final say, transparently. The timing now reads both
-   numbers, e.g. `0.18s → 30.4s` (first hit → full scan).
+   numbers, e.g. `0.18s → 30s`, labeled **detection → AI review**: the **0.18s**
+   is the product's core detection speed; the second number is the AI's optional
+   deep review, which varies run-to-run (typically ~25–45s) with the model.
 
 The final verdict = the un-cleared rule hits + the AI's additions. Detection
 quality is identical to a one-shot scan; this is purely about showing the fast,
