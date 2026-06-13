@@ -1,0 +1,12 @@
+# SENTRY API key — to enable the AI features after cloning:
+#
+#   1. Paste your Anthropic API key on the line below (replace the placeholder).
+#   2. (Recommended) rename this file to  apikey.txt  so it stays gitignored and
+#      your key is never committed.  The tool reads either filename.
+#   3. Re-run the scan — the console will show "AI-assisted".
+#
+# Lines starting with # are ignored. Only a line beginning with sk- is used.
+# The whole tool works WITHOUT a key too (deterministic mode); the key only adds
+# the AI confirmation pass and the AI-written investigation report.
+
+PASTE_YOUR_ANTHROPIC_API_KEY_HERE
