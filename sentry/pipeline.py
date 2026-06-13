@@ -37,9 +37,14 @@ def run_deterministic(scored, target: int = 20):
     return correlated, deterministic_verdict(correlated, target=target)
 
 
+def _candidates(correlated):
+    """Rows the rules consider worth judging (high or gray band, or escalated)."""
+    return [s for s in correlated if s.band in ("HIGH", "GRAY") or s.escalated]
+
+
 def run_full(scored, target: int = 20, client=None):
     correlated = correlate(scored)
-    candidates = [s for s in correlated if s.band in ("HIGH", "GRAY") or s.escalated]
+    candidates = _candidates(correlated)
     # AI runs ONLY when the rules didn't land on exactly `target` candidates.
     # Exactly `target` => trust the deterministic result (fast, no AI call).
     ai_details = {}
@@ -68,7 +73,17 @@ def run_full(scored, target: int = 20, client=None):
     return correlated, verdicts
 
 
+def candidate_count(scored, target: int = 20) -> int:
+    """How many commands the rules flag as worth judging (before the cap)."""
+    return len(_candidates(correlate(scored)))
+
+
 def ai_should_run(scored, target: int = 20) -> bool:
     """True if the rules did NOT find exactly `target` candidates (so AI is needed)."""
-    candidates = [s for s in correlate(scored) if s.band in ("HIGH", "GRAY") or s.escalated]
-    return len(candidates) != target
+    return candidate_count(scored) != target
+
+
+def ai_mode(scored, target: int = 20) -> str:
+    """Which AI mode the candidate count implies: PRUNE (>target), HUNT (<target), VERIFY (==)."""
+    n = candidate_count(scored)
+    return "PRUNE" if n > target else "HUNT" if n < target else "VERIFY"

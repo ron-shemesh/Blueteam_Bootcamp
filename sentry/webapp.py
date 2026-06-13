@@ -5,8 +5,7 @@ import time
 from flask import Flask, request, jsonify
 from sentry.ingest import load_csv
 from sentry.scoring import score_all
-from sentry.pipeline import run_full
-from sentry.pipeline import ai_should_run
+from sentry.pipeline import run_full, candidate_count, ai_mode
 from sentry.investigate import (name_scenario, remediation_playbook, find_traps,
                                 infer_objective)
 from sentry.narrate import ai_investigation
@@ -157,13 +156,22 @@ async function scan(){
   document.getElementById('f_tm').textContent=d.elapsed+'s';
   const note=document.getElementById('ainote');
   if(d.ai_ran){
-    let msg=`Rules engine flagged ${d.rules_count}. `;
-    if(d.ai_recovered.length) msg+=`AI HUNT recovered ${d.ai_recovered.length} stealthy command(s) the rules missed (rows ${d.ai_recovered.join(', ')}). `;
-    if(d.ai_cleared.length) msg+=`AI cleared ${d.ai_cleared.length} false positive(s). `;
-    if(!d.ai_recovered.length && !d.ai_cleared.length) msg+='AI reviewed the ambiguous candidates and confirmed the verdict.';
+    let msg;
+    if(d.mode==='HUNT'){
+      msg=`Rules flagged only ${d.candidates} suspicious command(s) — fewer than the expected 20. `;
+      if(d.ai_recovered.length) msg+=`AI hunted the rest and recovered ${d.ai_recovered.length} the rules missed (rows ${d.ai_recovered.join(', ')}). `;
+      if(d.ai_cleared.length) msg+=`AI also dropped ${d.ai_cleared.length} as false positive(s). `;
+    } else {  // PRUNE: rules over-flagged, AI picks the best 20
+      msg=`Rules flagged ${d.candidates} suspicious candidates — more than the expected 20. AI selected the final 20`;
+      const parts=[];
+      if(d.ai_recovered.length) parts.push(`reinstated ${d.ai_recovered.length} borderline row(s) (${d.ai_recovered.join(', ')})`);
+      if(d.ai_cleared.length) parts.push(`dropped ${d.ai_cleared.length} likely false positive(s)`);
+      msg += parts.length ? ': '+parts.join(' and ')+'. ' : '. ';
+    }
+    if(!d.ai_recovered.length && !d.ai_cleared.length) msg+='(AI agreed with the rules.)';
     note.textContent='✦ '+msg; note.style.color='var(--green)';
   } else if(d.ai){
-    note.textContent='✓ Rules engine found exactly '+d.rules_count+' with high confidence — AI pass not needed.';
+    note.textContent='✓ Rules found exactly '+d.candidates+' suspicious commands with high confidence — AI pass not needed.';
     note.style.color='var(--green)';
   } else {
     note.textContent='⚙ Deterministic only — add your key to apikey.txt to enable the AI pass.';
@@ -225,7 +233,9 @@ def scan():
     _, det_verdicts = run_full(score_all(rows), target=20, client=None)
     rules_ids = {v.row_id for v in det_verdicts if v.verdict == "malicious"}
     # The AI pass only fires when the rules did NOT land on exactly 20 candidates.
-    ai_ran = bool(client) and ai_should_run(score_all(rows), target=20)
+    cand_count = candidate_count(score_all(rows), target=20)   # true count, pre-cap
+    mode = ai_mode(score_all(rows), target=20)                 # PRUNE / HUNT / VERIFY
+    ai_ran = bool(client) and cand_count != 20
 
     t0 = time.perf_counter()
     if client:
@@ -244,7 +254,7 @@ def scan():
     return jsonify({"total": len(rows), "cleared": len(rows) - len(malicious),
                     "malicious": malicious, "elapsed": elapsed,
                     "ai": client is not None, "ai_ran": ai_ran,
-                    "rules_count": len(rules_ids),
+                    "rules_count": len(rules_ids), "candidates": cand_count, "mode": mode,
                     "ai_recovered": sorted(final_ids - rules_ids),
                     "ai_cleared": sorted(rules_ids - final_ids)})
 
