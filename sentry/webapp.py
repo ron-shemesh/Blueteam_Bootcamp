@@ -118,7 +118,7 @@ li{margin:4px 0}
     <div id="ainote" style="margin:-6px 0 14px;font-size:13px"></div>
     <div class="card">
       <h3>Flagged commands</h3>
-      <table><thead><tr><th>row</th><th>confidence</th><th>technique</th><th>why flagged</th></tr></thead>
+      <table><thead><tr><th>row</th><th>confidence</th><th>technique</th><th>command</th></tr></thead>
       <tbody id="rows"></tbody></table>
     </div>
     <button id="invbtn" class="ghost" onclick="investigate()">🔍 Investigate</button>
@@ -171,10 +171,10 @@ async function scan(){
   }
   const rows=d.malicious.slice().sort((a,b)=>b.confidence-a.confidence);
   document.getElementById('rows').innerHTML=rows.map(v=>
-    `<tr><td>${v.row_id}</td>`+
+    `<tr title="${esc(v.reason)}"><td>${v.row_id}</td>`+
     `<td><span class="conf" style="width:${Math.round(v.confidence*70)}px"></span> ${v.confidence}</td>`+
     `<td class="tech">${esc(v.mitre_technique)||'-'}</td>`+
-    `<td>${esc(v.reason)}</td></tr>`).join('');
+    `<td class="cmd">${esc(v.command)}</td></tr>`).join('');
   document.getElementById('results').classList.remove('hidden');
   document.getElementById('inv').classList.add('hidden');
 }
@@ -234,7 +234,9 @@ def scan():
         correlated, verdicts = run_full(score_all(rows), target=20, client=None)
     elapsed = round(time.perf_counter() - t0, 3)
 
-    malicious = [v.__dict__ for v in verdicts if v.verdict == "malicious"]
+    cmd_by_id = {s.command.row_id: s.command.command_line for s in correlated}
+    malicious = [{**v.__dict__, "command": cmd_by_id.get(v.row_id, "")}
+                 for v in verdicts if v.verdict == "malicious"]
     final_ids = {v["row_id"] for v in malicious}
     _STATE["correlated"] = correlated
     _STATE["malicious_ids"] = final_ids
