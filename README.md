@@ -70,6 +70,18 @@ Note: the AI review reads the whole command set, so it adds latency (tens of
 seconds) to a scan. The deterministic path (no key, or `--no-ai`) is instant — use
 it when speed matters and turn the AI on for the deepest, most contextual analysis.
 
+### Choosing the AI model (speed vs. depth)
+
+The AI pass uses **`claude-sonnet-4-6`** by default. To trade some depth for
+**faster** scans, set the `SENTRY_MODEL` environment variable to a lighter model
+before launching:
+
+```bash
+SENTRY_MODEL=claude-haiku-4-5-20251001 python3 -m sentry.webapp   # faster
+# or a more capable model for maximum analysis depth, e.g.:
+SENTRY_MODEL=claude-opus-4-8 python3 -m sentry.webapp
+```
+
 ## Sample data
 
 Two ready datasets live in `data/training/` (220 rows each, 20 malicious):
