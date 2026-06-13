@@ -19,15 +19,13 @@ def choose_mode(flagged_count: int, target: int) -> str:
 
 
 def _payload(records: list[ScoredRecord], baseline_ids=frozenset()) -> list[dict]:
+    # Compact payload: the model needs the command, the rule score, and the
+    # baseline verdict — not the verbose signal/link arrays. Smaller input = faster.
     return [{
         "row_id": s.command.row_id,
-        "process": s.command.process_name,
         "command": s.command.command_line,
         "rules_score": round(s.risk_score, 3),
-        "rules_signals": s.signals,
         "rules_flagged": s.command.row_id in baseline_ids,   # the rules' baseline verdict
-        "linked_rows": s.linked_rows,
-        "combo_hits": s.combo_hits,
     } for s in records]
 
 
