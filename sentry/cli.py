@@ -38,9 +38,9 @@ def main():
     rows = load_csv(args.csv)
     scored = score_all(rows)
     client = _make_client(args.no_ai)
-    from sentry.pipeline import run_full, candidate_count
-    # AI only runs when the rules don't land on exactly `target` candidates.
-    ai_ran = client is not None and candidate_count(scored, args.target) != args.target
+    from sentry.pipeline import run_full
+    # With a key the AI always reviews the full set against the rules' baseline.
+    ai_ran = client is not None
     correlated, verdicts = run_full(scored, target=args.target, client=client)
     elapsed = time.perf_counter() - t0
 
@@ -48,8 +48,7 @@ def main():
     if args.json:
         print(json.dumps([v.__dict__ for v in malicious], indent=2))
     else:
-        mode = ("AI-assisted" if ai_ran else
-                "AI ready (not needed)" if client else "deterministic")
+        mode = "AI-assisted" if ai_ran else "deterministic"
         print(f"Scan complete in {elapsed:.3f}s ({mode}) — {len(rows)} commands, "
               f"{len(malicious)} flagged malicious\n")
         for v in sorted(malicious, key=lambda v: v.confidence, reverse=True):

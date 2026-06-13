@@ -45,10 +45,11 @@ def _candidates(correlated):
 def run_full(scored, target: int = 20, client=None):
     correlated = correlate(scored)
     candidates = _candidates(correlated)
-    # AI runs ONLY when the rules didn't land on exactly `target` candidates.
-    # Exactly `target` => trust the deterministic result (fast, no AI call).
+    # With a key, the AI always reviews the full command set against the rules'
+    # baseline (it can recover campaigns hiding in low-scored commands and drop
+    # bait). Without a key, the deterministic verdict stands.
     ai_details = {}
-    if client is None or len(candidates) == target:
+    if client is None:
         keep = cap_to_target(candidates, target)
     else:
         from sentry.ai_confirm import confirm

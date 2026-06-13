@@ -148,7 +148,6 @@ async function scan(){
   document.getElementById('status').textContent='';
   const mode=document.getElementById('mode');
   if(d.ai_ran){ mode.textContent='AI-assisted'; mode.className='chip ai'; }
-  else if(d.ai){ mode.textContent='AI ready (not needed)'; mode.className='chip det'; }
   else { mode.textContent='deterministic'; mode.className='chip det'; }
   document.getElementById('f_in').textContent=d.total;
   document.getElementById('f_cl').textContent=d.cleared;
@@ -156,23 +155,12 @@ async function scan(){
   document.getElementById('f_tm').textContent=d.elapsed+'s';
   const note=document.getElementById('ainote');
   if(d.ai_ran){
-    let msg;
-    if(d.mode==='HUNT'){
-      msg=`Rules flagged only ${d.candidates} suspicious command(s) — fewer than the expected 20. `;
-      if(d.ai_recovered.length) msg+=`AI hunted the rest and recovered ${d.ai_recovered.length} the rules missed (rows ${d.ai_recovered.join(', ')}). `;
-      if(d.ai_cleared.length) msg+=`AI also dropped ${d.ai_cleared.length} as false positive(s). `;
-    } else {  // PRUNE: rules over-flagged, AI picks the best 20
-      msg=`Rules flagged ${d.candidates} suspicious candidates — more than the expected 20. AI selected the final 20`;
-      const parts=[];
-      if(d.ai_recovered.length) parts.push(`reinstated ${d.ai_recovered.length} borderline row(s) (${d.ai_recovered.join(', ')})`);
-      if(d.ai_cleared.length) parts.push(`dropped ${d.ai_cleared.length} likely false positive(s)`);
-      msg += parts.length ? ': '+parts.join(' and ')+'. ' : '. ';
-    }
-    if(!d.ai_recovered.length && !d.ai_cleared.length) msg+='(AI agreed with the rules.)';
+    let msg=`AI reviewed all ${d.total} commands against the rules' baseline (${d.candidates} candidate(s))`;
+    const parts=[];
+    if(d.ai_recovered.length) parts.push(`recovered ${d.ai_recovered.length} the rules missed (rows ${d.ai_recovered.join(', ')})`);
+    if(d.ai_cleared.length) parts.push(`cleared ${d.ai_cleared.length} false positive(s)`);
+    msg += parts.length ? ' and finalized 20: '+parts.join(' and ')+'.' : ' and confirmed the verdict.';
     note.textContent='✦ '+msg; note.style.color='var(--green)';
-  } else if(d.ai){
-    note.textContent='✓ Rules found exactly '+d.candidates+' suspicious commands with high confidence — AI pass not needed.';
-    note.style.color='var(--green)';
   } else {
     note.textContent='⚙ Deterministic only — add your key to apikey.txt to enable the AI pass.';
     note.style.color='var(--mut)';
@@ -233,9 +221,9 @@ def scan():
     _, det_verdicts = run_full(score_all(rows), target=20, client=None)
     rules_ids = {v.row_id for v in det_verdicts if v.verdict == "malicious"}
     # The AI pass only fires when the rules did NOT land on exactly 20 candidates.
-    cand_count = candidate_count(score_all(rows), target=20)   # true count, pre-cap
+    cand_count = candidate_count(score_all(rows), target=20)   # rules' candidate count, pre-cap
     mode = ai_mode(score_all(rows), target=20)                 # PRUNE / HUNT / VERIFY
-    ai_ran = bool(client) and cand_count != 20
+    ai_ran = bool(client)   # with a key, the AI always reviews the full set
 
     t0 = time.perf_counter()
     if client:

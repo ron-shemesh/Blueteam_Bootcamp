@@ -17,9 +17,12 @@ real SOC — the clock.
    milliseconds and is immune to manipulation.
 2. Correlation links commands that are innocent alone but malicious together
    (recon → credential dump → staging → exfil).
-3. A **targeted AI pass** runs *only* when the rules don't already resolve the
-   known count — confirming ambiguous cases and hunting for stealthy commands the
-   rules missed. Pattern-matching is the engine; AI is the augmentation.
+3. When an API key is present, an **AI pass reviews the full command set against
+   the rules' baseline** — keeping the strong signature hits, hunting for
+   campaigns of individually-benign commands the rules missed (e.g. supply-chain
+   poisoning), and dropping bait planted to cause false positives. Without a key
+   the engine runs deterministic-only. Pattern-matching is the foundation; the AI
+   is a full-context second analyst on top of it.
 
 **Phase 2 — Investigation (on demand, off the clock).**
 One click produces an AI-written incident report: the attack scenario, the
@@ -62,6 +65,10 @@ To enable them, put your key (`sk-ant-…`) into the project:
 Only a line starting with `sk-` is read, so the committed placeholder is ignored
 until replaced. **Never commit a real key.** Skip this entirely and SENTRY still
 runs in deterministic mode.
+
+Note: the AI review reads the whole command set, so it adds latency (tens of
+seconds) to a scan. The deterministic path (no key, or `--no-ai`) is instant — use
+it when speed matters and turn the AI on for the deepest, most contextual analysis.
 
 ## Sample data
 
