@@ -33,6 +33,25 @@ card grading the attacker's evasion.
 The whole tool runs **without an API key** in deterministic mode; the key only
 adds the AI confirmation pass and the AI-written report.
 
+### What you see when you scan (progressive results)
+
+The console answers in two stages so you never wait on a blank screen:
+
+1. **Instantly (~0.1s):** a **"Confirmed by rules"** table fills with the
+   high-confidence (score ≥ 0.9) deterministic detections — the concrete hits you
+   can act on immediately — while a spinner shows the AI is still reviewing the
+   rest. The timing reads e.g. `0.18s → …`.
+2. **When the AI finishes (~30s):** a **"Found by AI"** table appears with the
+   additional commands the AI surfaced (campaigns the rules missed). If the AI
+   judges one of the high-confidence rule hits to be benign, that row is shown
+   **struck-through in place** ("AI cleared as benign") rather than silently
+   removed — the AI has the final say, transparently. The timing now reads both
+   numbers, e.g. `0.18s → 30.4s` (first hit → full scan).
+
+The final verdict = the un-cleared rule hits + the AI's additions. Detection
+quality is identical to a one-shot scan; this is purely about showing the fast,
+trustworthy results first and the full picture as soon as it's ready.
+
 ## Clone and run
 
 ```bash

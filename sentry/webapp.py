@@ -95,6 +95,15 @@ background:#15202e;color:var(--blue);margin-right:8px;white-space:nowrap}
 .rc{display:flex;gap:24px;align-items:center}
 li{margin:4px 0}
 .hidden{display:none}
+.spinner{display:inline-block;width:12px;height:12px;border:2px solid var(--line);
+border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;
+vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.status{margin:-6px 0 14px;font-size:13px}
+tr.cleared td{color:var(--mut);text-decoration:line-through}
+.clearnote{color:var(--mut);text-decoration:none;font-size:11px;margin-left:8px}
+.aitag{font-size:10px;padding:1px 6px;border-radius:10px;background:#0e1a12;
+color:var(--green);margin-left:6px}
 </style></head><body>
 <header>
   <h1>🛡 SENTRY</h1><span class="sub">Process-Command Threat Analyst</span>
@@ -112,15 +121,20 @@ li{margin:4px 0}
       <div class="in"><div class="n" id="f_in">0</div><div class="l">commands in</div></div>
       <div class="cl"><div class="n" id="f_cl">0</div><div class="l">cleared benign</div></div>
       <div class="mal"><div class="n" id="f_mal">0</div><div class="l">flagged malicious</div></div>
-      <div class="tm"><div class="n" id="f_tm">0s</div><div class="l">scan time</div></div>
+      <div class="tm"><div class="n" id="f_tm">–</div><div class="l">first hit → full scan</div></div>
     </div>
-    <div id="ainote" style="margin:-6px 0 14px;font-size:13px"></div>
+    <div id="ainote" class="status"></div>
     <div class="card">
-      <h3>Flagged commands</h3>
+      <h3>Confirmed by rules <span class="muted" style="text-transform:none">· high-confidence, shown instantly</span></h3>
       <table><thead><tr><th>row</th><th>confidence</th><th>technique</th><th>command</th></tr></thead>
-      <tbody id="rows"></tbody></table>
+      <tbody id="rows_rules"></tbody></table>
     </div>
-    <button id="invbtn" class="ghost" onclick="investigate()">🔍 Investigate</button>
+    <div class="card hidden" id="ai_section">
+      <h3 id="ai_section_h">Found by AI <span class="muted" style="text-transform:none">· full-context review</span></h3>
+      <table><thead><tr><th>row</th><th>confidence</th><th>technique</th><th>command</th></tr></thead>
+      <tbody id="rows_ai"></tbody></table>
+    </div>
+    <button id="invbtn" class="ghost hidden" onclick="investigate()">🔍 Investigate</button>
   </div>
 
   <div id="inv" class="hidden">
@@ -139,40 +153,79 @@ li{margin:4px 0}
 </main>
 <script>
 function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+function rowHTML(v,opts){
+  opts=opts||{};
+  const clr = opts.cleared ? ' <span class="clearnote">— AI cleared as benign</span>' : '';
+  const cls = opts.cleared ? ' class="cleared"' : '';
+  return `<tr${cls} title="${esc(v.reason)}"><td>${v.row_id}</td>`+
+    `<td><span class="conf" style="width:${Math.round(v.confidence*70)}px"></span> ${v.confidence}</td>`+
+    `<td class="tech">${esc(v.technique)||'-'}</td>`+
+    `<td class="cmd">${esc(v.command)}${clr}</td></tr>`;
+}
 async function scan(){
   const file=document.getElementById('f').files[0];
   if(!file){document.getElementById('status').textContent='choose a CSV first';return;}
-  document.getElementById('status').textContent='scanning…';
-  const fd=new FormData(); fd.append('csv',file);
-  const d=await (await fetch('/scan',{method:'POST',body:fd})).json();
   document.getElementById('status').textContent='';
-  const mode=document.getElementById('mode');
-  if(d.ai_ran){ mode.textContent='AI-assisted'; mode.className='chip ai'; }
-  else { mode.textContent='deterministic'; mode.className='chip det'; }
-  document.getElementById('f_in').textContent=d.total;
-  document.getElementById('f_cl').textContent=d.cleared;
-  document.getElementById('f_mal').textContent=d.malicious.length;
-  document.getElementById('f_tm').textContent=d.elapsed+'s';
-  const note=document.getElementById('ainote');
-  if(d.ai_ran){
-    let msg=`AI reviewed all ${d.total} commands against the rules' baseline (${d.candidates} candidate(s))`;
-    const parts=[];
-    if(d.ai_recovered.length) parts.push(`recovered ${d.ai_recovered.length} the rules missed (rows ${d.ai_recovered.join(', ')})`);
-    if(d.ai_cleared.length) parts.push(`cleared ${d.ai_cleared.length} false positive(s)`);
-    msg += parts.length ? ' and finalized 20: '+parts.join(' and ')+'.' : ' and confirmed the verdict.';
-    note.textContent='✦ '+msg; note.style.color='var(--green)';
-  } else {
-    note.textContent='⚙ Deterministic only — add your key to apikey.txt to enable the AI pass.';
-    note.style.color='var(--mut)';
-  }
-  const rows=d.malicious.slice().sort((a,b)=>b.confidence-a.confidence);
-  document.getElementById('rows').innerHTML=rows.map(v=>
-    `<tr title="${esc(v.reason)}"><td>${v.row_id}</td>`+
-    `<td><span class="conf" style="width:${Math.round(v.confidence*70)}px"></span> ${v.confidence}</td>`+
-    `<td class="tech">${esc(v.mitre_technique)||'-'}</td>`+
-    `<td class="cmd">${esc(v.command)}</td></tr>`).join('');
+  // reset
   document.getElementById('results').classList.remove('hidden');
   document.getElementById('inv').classList.add('hidden');
+  document.getElementById('invbtn').classList.add('hidden');
+  document.getElementById('ai_section').classList.add('hidden');
+  document.getElementById('rows_rules').innerHTML='';
+  document.getElementById('rows_ai').innerHTML='';
+  document.getElementById('f_cl').textContent='–';
+  document.getElementById('f_mal').textContent='–';
+  document.getElementById('f_tm').textContent='–';
+  const note=document.getElementById('ainote');
+  const mode=document.getElementById('mode'); mode.textContent='scanning…'; mode.className='chip det';
+  note.innerHTML='<span class="spinner"></span> Running high-confidence rules…'; note.style.color='var(--blue)';
+  try{
+    // PHASE 1 — instant high-confidence rule hits
+    const t0=performance.now();
+    const fd1=new FormData(); fd1.append('csv',file);
+    const fast=await (await fetch('/scan_fast',{method:'POST',body:fd1})).json();
+    const fastSec=((performance.now()-t0)/1000).toFixed(2);
+    document.getElementById('f_in').textContent=fast.total;
+    document.getElementById('f_tm').innerHTML=`${fastSec}s <span class="muted">→ …</span>`;
+    document.getElementById('rows_rules').innerHTML =
+      fast.rules_high.map(v=>rowHTML(v)).join('') ||
+      '<tr><td colspan=4 class="muted">no high-confidence rule hits — AI is reviewing…</td></tr>';
+    note.innerHTML=`<span class="spinner"></span> ⚡ ${fast.rules_high.length} high-confidence detection(s) in <b>${fastSec}s</b> — AI now reviewing all ${fast.total} commands…`;
+
+    // PHASE 2 — full AI-reviewed result
+    const fd2=new FormData(); fd2.append('csv',file);
+    const d=await (await fetch('/scan',{method:'POST',body:fd2})).json();
+    if(d.ai_ran){ mode.textContent='AI-assisted'; mode.className='chip ai'; }
+    else { mode.textContent='deterministic'; mode.className='chip det'; }
+    document.getElementById('f_cl').textContent=d.cleared;
+    document.getElementById('f_mal').textContent=d.malicious_count;
+    document.getElementById('f_tm').innerHTML=`${fastSec}s <span class="muted">→</span> ${d.elapsed}s`;
+    const clearedN=d.rules_high.filter(v=>v.cleared).length;
+    // rules section, now with any AI overrules marked in place
+    document.getElementById('rows_rules').innerHTML =
+      d.rules_high.map(v=>rowHTML(v,{cleared:v.cleared})).join('') ||
+      '<tr><td colspan=4 class="muted">no high-confidence rule hits</td></tr>';
+    // second section
+    const extra=d.ai_found||[];
+    document.getElementById('ai_section_h').innerHTML = (d.ai_ran?'Found by AI':'Other rule detections')+
+      ' <span class="muted" style="text-transform:none">· '+(d.ai_ran?'full-context review':'medium confidence')+'</span>';
+    if(extra.length){
+      document.getElementById('ai_section').classList.remove('hidden');
+      document.getElementById('rows_ai').innerHTML=extra.map(v=>rowHTML(v)).join('');
+    }
+    if(d.ai_ran){
+      let msg=`✓ First high-confidence hits in <b>${fastSec}s</b>; full AI review complete in <b>${d.elapsed}s</b> — ${d.malicious_count} flagged. `+
+        `Rules: ${d.rules_high.length-clearedN} high-confidence hit(s)`+
+        (extra.length?`, AI added ${extra.length}`:'')+(clearedN?`, AI cleared ${clearedN} rule hit(s) as benign`:'')+'.';
+      note.innerHTML=msg; note.style.color='var(--green)';
+    } else {
+      note.innerHTML='⚙ Deterministic only — add your key to apikey.txt to enable the AI review pass.';
+      note.style.color='var(--mut)';
+    }
+    document.getElementById('invbtn').classList.remove('hidden');
+  }catch(e){
+    note.innerHTML='⚠ Scan failed: '+esc(String(e)); note.style.color='var(--red)';
+  }
 }
 async function investigate(){
   const btn=document.getElementById('invbtn'); btn.textContent='Investigating…'; btn.disabled=true;
@@ -209,42 +262,69 @@ def index():
     return PAGE
 
 
+HIGH_CONF = 0.9   # deterministic score at/above which a hit is "high-confidence"
+
+
+@app.route("/scan_fast", methods=["POST"])
+def scan_fast():
+    """Phase 1: instant, deterministic-only — return the high-confidence rule hits."""
+    f = request.files["csv"]
+    path = "/tmp/sentry_fast.csv"
+    f.save(path)
+    rows = load_csv(path)
+    correlated, verdicts = run_full(score_all(rows), target=20, client=None)
+    score_by = {s.command.row_id: s.risk_score for s in correlated}
+    cmd_by = {s.command.row_id: s.command.command_line for s in correlated}
+    vt = {v.row_id: v for v in verdicts}
+    hi = sorted((rid for rid, sc in score_by.items() if sc >= HIGH_CONF),
+                key=lambda r: -score_by[r])
+    hits = [{"row_id": rid, "command": cmd_by[rid], "confidence": round(score_by[rid], 3),
+             "technique": vt[rid].mitre_technique} for rid in hi]
+    return jsonify({"total": len(rows), "rules_high": hits})
+
+
 @app.route("/scan", methods=["POST"])
 def scan():
+    """Phase 2: full pipeline. Returns the high-confidence rule hits (with any AI
+    overrule marked) and the additional commands the AI surfaced."""
     f = request.files["csv"]
     path = "/tmp/sentry_upload.csv"
     f.save(path)
     client = _client()
     rows = load_csv(path)
-
-    # Always compute the rules-only result first so we can show the AI's effect.
-    _, det_verdicts = run_full(score_all(rows), target=20, client=None)
-    rules_ids = {v.row_id for v in det_verdicts if v.verdict == "malicious"}
-    # The AI pass only fires when the rules did NOT land on exactly 20 candidates.
-    cand_count = candidate_count(score_all(rows), target=20)   # rules' candidate count, pre-cap
-    mode = ai_mode(score_all(rows), target=20)                 # PRUNE / HUNT / VERIFY
-    ai_ran = bool(client)   # with a key, the AI always reviews the full set
+    cand_count = candidate_count(score_all(rows), target=20)
+    mode = ai_mode(score_all(rows), target=20)
+    ai_ran = bool(client)
 
     t0 = time.perf_counter()
-    if client:
-        correlated, verdicts = run_full(score_all(rows), target=20, client=client)
-    else:
-        correlated, verdicts = run_full(score_all(rows), target=20, client=None)
+    correlated, verdicts = run_full(score_all(rows), target=20, client=client)
     elapsed = round(time.perf_counter() - t0, 3)
 
-    cmd_by_id = {s.command.row_id: s.command.command_line for s in correlated}
-    malicious = [{**v.__dict__, "command": cmd_by_id.get(v.row_id, "")}
-                 for v in verdicts if v.verdict == "malicious"]
-    final_ids = {v["row_id"] for v in malicious}
+    score_by = {s.command.row_id: s.risk_score for s in correlated}
+    cmd_by = {s.command.row_id: s.command.command_line for s in correlated}
+    vt = {v.row_id: v for v in verdicts}
+    final_mal = {v.row_id for v in verdicts if v.verdict == "malicious"}
+
+    high_ids = sorted((rid for rid, sc in score_by.items() if sc >= HIGH_CONF),
+                      key=lambda r: -score_by[r])
+    high_set = set(high_ids)
+    rules_high = [{"row_id": rid, "command": cmd_by[rid],
+                   "confidence": round(score_by[rid], 3),
+                   "technique": vt[rid].mitre_technique, "reason": vt[rid].reason,
+                   "cleared": rid not in final_mal} for rid in high_ids]
+    extra = sorted((v for v in verdicts if v.verdict == "malicious" and v.row_id not in high_set),
+                   key=lambda v: -v.confidence)
+    ai_found = [{"row_id": v.row_id, "command": cmd_by[v.row_id], "confidence": v.confidence,
+                 "technique": v.mitre_technique, "reason": v.reason} for v in extra]
+
     _STATE["correlated"] = correlated
-    _STATE["malicious_ids"] = final_ids
+    _STATE["malicious_ids"] = final_mal
     _STATE["truth_ids"] = _ground_truth(path)
-    return jsonify({"total": len(rows), "cleared": len(rows) - len(malicious),
-                    "malicious": malicious, "elapsed": elapsed,
+    return jsonify({"total": len(rows), "malicious_count": len(final_mal),
+                    "cleared": len(rows) - len(final_mal), "elapsed": elapsed,
                     "ai": client is not None, "ai_ran": ai_ran,
-                    "rules_count": len(rules_ids), "candidates": cand_count, "mode": mode,
-                    "ai_recovered": sorted(final_ids - rules_ids),
-                    "ai_cleared": sorted(rules_ids - final_ids)})
+                    "candidates": cand_count, "mode": mode,
+                    "rules_high": rules_high, "ai_found": ai_found})
 
 
 def _red_grade(evaded):
